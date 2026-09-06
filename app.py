@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from deep_translator import GoogleTranslator
 import io
+import time
 
 SINHALA_MONTHS = {
     1: "ජනවාරි", 2: "පෙබරවාරි", 3: "මාර්තු", 4: "අප්‍රේල්",
@@ -20,7 +21,12 @@ def translate_to_sinhala(text):
     if pd.isna(text) or str(text).strip() == "":
         return ""
     try:
-        return GoogleTranslator(source='auto', target='si').translate(str(text))
+        # Google Rate Limit වීම වැළැක්වීමට තත්පර 0.4 ක පරතරයක්
+        time.sleep(0.4)
+        translated = GoogleTranslator(source='auto', target='si').translate(str(text))
+        if "Error 500" in str(translated):
+            return str(text)
+        return translated
     except Exception:
         return text
 
@@ -39,7 +45,7 @@ if uploaded_file is not None:
     date_col = st.selectbox("Disconnection Date සහිත Column එක තෝරන්න:", df.columns)
 
     if st.button("Process & Convert Excel"):
-        with st.spinner("පරිවර්තනය වෙමින් පවතී..."):
+        with st.spinner("පරිවර්තනය වෙමින් පවතී... කරුණාකර රඳී සිටින්න."):
             df['Address_Sinhala'] = df[address_col].apply(translate_to_sinhala)
             df['Disconnection_Date_Sinhala'] = df[date_col].apply(format_disconnection_date)
 

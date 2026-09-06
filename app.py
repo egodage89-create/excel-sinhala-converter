@@ -17,18 +17,21 @@ def format_disconnection_date(date_val):
     except Exception:
         return date_val
 
-def translate_to_sinhala(text):
+def translate_with_retry(text, retries=3, delay=1.2):
     if pd.isna(text) or str(text).strip() == "":
         return ""
-    try:
-        # Google Rate Limit වීම වැළැක්වීමට තත්පර 0.4 ක පරතරයක්
-        time.sleep(0.4)
-        translated = GoogleTranslator(source='auto', target='si').translate(str(text))
-        if "Error 500" in str(translated):
-            return str(text)
-        return translated
-    except Exception:
-        return text
+    
+    text_str = str(text).strip()
+    for attempt in range(retries):
+        try:
+            time.sleep(delay)
+            translated = GoogleTranslator(source='auto', target='si').translate(text_str)
+            if translated and "Error 500" not in str(translated):
+                return translated
+        except Exception:
+            time.sleep(delay * 2) # Failure එකකදී තවත් තත්පර කිහිපයක් රඳී සිටී
+            
+    return text_str
 
 st.title("📊 Excel Sinhala Converter Tool")
 st.write("Singlish ලිපින සහ Disconnection Dates සිංහලට පරිවර්තනය කිරීම")
@@ -45,20 +48,31 @@ if uploaded_file is not None:
     date_col = st.selectbox("Disconnection Date සහිත Column එක තෝරන්න:", df.columns)
 
     if st.button("Process & Convert Excel"):
-        with st.spinner("පරිවර්තනය වෙමින් පවතී... කරුණාකර රඳී සිටින්න."):
-            df['Address_Sinhala'] = df[address_col].apply(translate_to_sinhala)
-            df['Disconnection_Date_Sinhala'] = df[date_col].apply(format_disconnection_date)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        translated_addresses = []
+        total_rows = len(df)
 
-            st.success("පරිවර්තනය සාර්ථකයි!")
-            st.dataframe(df.head())
+        for idx, row in enumerate(df[address_col]):
+            status_text.text(f"පරිවර්තනය වෙමින් පවතී: {idx + 1}/{total_rows}")
+            translated_addresses.append(translate_with_retry(row))
+            progress_bar.progress((idx + 1) / total_rows)
 
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Converted_Data')
+        df['Address_Sinhala'] = translated_addresses
+        df['Disconnection_Date_Sinhala'] = df[date_col].apply(format_disconnection_date)
 
-            st.download_button(
-                label="📥 Converted Excel Sheet එක Download කරගන්න",
-                data=output.getvalue(),
-                file_name="Converted_Data_Sinhala.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        status_text.text("පරිවර්තනය අවසන්!")
+        st.success("සියලුම Data සාර්ථකව පරිවර්තනය විය!")
+        st.dataframe(df.head(10))
+
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Converted_Data')
+
+        st.download_button(
+            label="📥 Converted Excel Sheet එක Download කරගන්න",
+            data=output.getvalue(),
+            file_name="Converted_Data_Sinhala.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
